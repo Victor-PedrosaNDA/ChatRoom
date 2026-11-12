@@ -21,9 +21,9 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/favicon.png"
-    }
+  "bundler": "metro",
+  "output": "single",
+  "favicon": "./assets/favicon.png"
+}
   }
 }
