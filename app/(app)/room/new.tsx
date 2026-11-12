@@ -7,9 +7,9 @@ import { z } from 'zod';
 import { Button } from '@/components/Button';
 import { FormInput } from '@/components/FormInput';
 import { Screen } from '@/components/Screen';
-import { useAuth } from '@/context/AuthContext';
 import { useCreateRoom } from '@/hooks/useRooms';
 import { colors, spacing } from '@/theme';
+import { friendlyError } from '@/utils/errors';
 
 const EMOJIS = ['💬', '🎮', '📚', '🎵', '🍕', '⚽', '🌍', '💡', '🚀', '❤️'];
 
@@ -21,9 +21,9 @@ type FormData = z.infer<typeof schema>;
 
 export default function NewRoomScreen() {
   const router = useRouter();
-  const { user } = useAuth();
   const createRoom = useCreateRoom();
   const [emoji, setEmoji] = useState(EMOJIS[0]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const { control, handleSubmit, formState } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -31,14 +31,17 @@ export default function NewRoomScreen() {
   });
 
   const submit = handleSubmit(async (values) => {
-    if (!user) return;
-    const room = await createRoom.mutateAsync({
-      name: values.name,
-      description: values.description ?? '',
-      emoji,
-      userId: user.id,
-    });
-    router.replace(`/room/${room.id}`);
+    setFormError(null);
+    try {
+      const roomId = await createRoom.mutateAsync({
+        name: values.name,
+        description: values.description ?? '',
+        emoji,
+      });
+      router.replace(`/room/${roomId}`);
+    } catch (error) {
+      setFormError(friendlyError(error));
+    }
   });
 
   return (
@@ -74,6 +77,8 @@ export default function NewRoomScreen() {
         <Text style={styles.previewEmoji}>{emoji}</Text>
       </View>
 
+      {formError ? <Text style={styles.error}>{formError}</Text> : null}
+
       <Button
         title="Criar sala"
         onPress={submit}
@@ -92,7 +97,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -100,4 +105,5 @@ const styles = StyleSheet.create({
   emojiText: { fontSize: 24 },
   preview: { alignItems: 'center', marginVertical: spacing.lg },
   previewEmoji: { fontSize: 64 },
+  error: { color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },
 });

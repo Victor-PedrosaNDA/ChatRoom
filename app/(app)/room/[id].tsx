@@ -20,30 +20,42 @@ import { useDeleteMessage, useMessages, useSendMessage } from '@/hooks/useMessag
 import { useRoom, useRoomMembers, useJoinRoom } from '@/hooks/useRooms';
 import { useRoomPresence } from '@/hooks/usePresence';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { groupMessagesByDay } from '@/utils/messages';
+import { groupMessagesByDay, shouldGroupWithPrevious } from '@/utils/messages';
 import { colors, spacing } from '@/theme';
 import type { Message, PendingMessage } from '@/types';
+import { friendlyError } from '@/utils/errors';
 
 type ListItem =
-  | { type: 'separator'; date: string; key: string }
-  | { type: 'message'; message: Message | PendingMessage; key: string };
+  | { type: 'separator'; label: string; key: string }
+  | {
+      type: 'message';
+      message: Message | PendingMessage;
+      key: string;
+      showSender: boolean;
+    };
 
 export default function RoomScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const navigation = useNavigation();
 
-  const { data: room, isLoading: roomLoading } = useRoom(id);
+  const {
+    data: room,
+    isLoading: roomLoading,
+    isError: roomError,
+    refetch: refetchRoom,
+  } = useRoom(id);
   const { data: messages, isLoading: msgLoading, isError, refetch } = useMessages(id);
   const { data: members } = useRoomMembers(id);
   const onlineIds = useRoomPresence(id);
-  const { typingNames, notifyTyping } = useTypingIndicator(id);
+  const { typingUsernames, notifyTyping } = useTypingIndicator(id);
   const sendMessage = useSendMessage(id);
   const deleteMessage = useDeleteMessage(id);
   const joinRoom = useJoinRoom();
 
   const [text, setText] = useState('');
   const flatRef = useRef<FlatList>(null);
+  const joinAttemptedForRoom = useRef<string | null>(null);
 
   // Set room name in header
   useEffect(() => {
@@ -54,17 +66,22 @@ export default function RoomScreen() {
 
   // Auto-join if not a member
   useEffect(() => {
-    if (user && id && members) {
-      const isMember = members.some((m) => m.user_id === user.id);
-      if (!isMember) joinRoom.mutate({ roomId: id, userId: user.id });
+    if (user && id && members && joinAttemptedForRoom.current !== id) {
+      const isMember = members.some((member) => member.userId === user.id);
+      if (!isMember) {
+        joinAttemptedForRoom.current = id;
+        joinRoom.mutate(id);
+      }
     }
-  }, [user, id, members]);
+  }, [user, id, members, joinRoom]);
 
   const handleSend = () => {
     const content = text.trim();
     if (!content || !user) return;
     setText('');
-    sendMessage.mutate({ content, userId: user.id });
+    sendMessage.mutate(content, {
+      onError: () => setText(content),
+    });
   };
 
   const handleChangeText = (val: string) => {
@@ -73,15 +90,34 @@ export default function RoomScreen() {
   };
 
   if (roomLoading || msgLoading) return <LoadingView />;
+  if (roomError) return <ErrorState onRetry={refetchRoom} />;
+  if (joinRoom.isError) {
+    return (
+      <ErrorState
+        message={friendlyError(joinRoom.error)}
+        onRetry={() => {
+          joinAttemptedForRoom.current = null;
+          joinRoom.reset();
+        }}
+      />
+    );
+  }
   if (isError) return <ErrorState onRetry={refetch} />;
 
   // Build flat list data from grouped messages
   const sections = groupMessagesByDay(messages ?? []);
   const listData: ListItem[] = [];
   for (const section of sections) {
-    listData.push({ type: 'separator', date: section.date, key: `sep-${section.date}` });
+    listData.push({ type: 'separator', label: section.label, key: `sep-${section.label}` });
+    let previous: Message | undefined;
     for (const msg of section.messages) {
-      listData.push({ type: 'message', message: msg, key: msg.id });
+      listData.push({
+        type: 'message',
+        message: msg,
+        key: msg.id,
+        showSender: !shouldGroupWithPrevious(msg, previous),
+      });
+      previous = msg;
     }
   }
 
@@ -102,12 +138,13 @@ export default function RoomScreen() {
 
         {/* Member avatars */}
         <View style={styles.memberAvatars}>
-          {(members ?? []).slice(0, 5).map((m) => (
+          {(members ?? []).slice(0, 5).map((m, index) => (
             <Avatar
-              key={m.user_id}
-              name={m.profiles?.username ?? '?'}
+              key={m.userId}
+              username={m.username}
+              color={m.avatarColor}
               size={24}
-              style={styles.memberAvatar}
+              style={index > 0 ? styles.memberAvatarOverlap : undefined}
             />
           ))}
           {(members?.length ?? 0) > 5 && (
@@ -128,17 +165,19 @@ export default function RoomScreen() {
             return (
               <View style={styles.daySep}>
                 <View style={styles.daySepLine} />
-                <Text style={styles.daySepText}>{item.date}</Text>
+                <Text style={styles.daySepText}>{item.label}</Text>
                 <View style={styles.daySepLine} />
               </View>
             );
           }
           const msg = item.message;
-          const isOwn = msg.user_id === user?.id;
+          const isOwn = msg.userId === user?.id;
           return (
             <MessageBubble
               message={msg}
-              isOwn={isOwn}
+              mine={isOwn}
+              showSender={item.showSender}
+              pending={'pending' in msg && msg.pending}
               onLongPress={
                 isOwn && !('pending' in msg)
                   ? () => deleteMessage.mutate(msg.id)
@@ -150,8 +189,15 @@ export default function RoomScreen() {
       />
 
       {/* Typing indicator */}
-      {typingNames.length > 0 && (
-        <TypingIndicator names={typingNames} style={styles.typing} />
+      {(sendMessage.error || deleteMessage.error) && (
+        <Text style={styles.actionError}>
+          {friendlyError(sendMessage.error ?? deleteMessage.error)}
+        </Text>
+      )}
+      {typingUsernames.length > 0 && (
+        <View style={styles.typing}>
+          <TypingIndicator usernames={typingUsernames} />
+        </View>
       )}
 
       {/* Input bar */}
@@ -185,7 +231,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: 8,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: 6,
@@ -197,8 +243,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e',
   },
   presenceText: { color: colors.muted, fontSize: 13 },
-  memberAvatars: { flexDirection: 'row', marginLeft: 'auto', gap: -6 },
-  memberAvatar: { borderWidth: 1.5, borderColor: colors.card },
+  memberAvatars: { flexDirection: 'row', marginLeft: 'auto' },
+  memberAvatarOverlap: { marginLeft: -6, borderWidth: 1.5, borderColor: colors.surface },
   moreMembers: { color: colors.muted, fontSize: 12, marginLeft: 4 },
   messageList: { padding: spacing.md, gap: 2, flexGrow: 1 },
   daySep: {
@@ -210,12 +256,18 @@ const styles = StyleSheet.create({
   daySepLine: { flex: 1, height: 1, backgroundColor: colors.border },
   daySepText: { color: colors.muted, fontSize: 12 },
   typing: { paddingHorizontal: spacing.md, paddingBottom: 4 },
+  actionError: {
+    color: colors.danger,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     padding: spacing.sm,
     gap: spacing.sm,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },

@@ -63,9 +63,13 @@ npm install
 
 ### 3. Configurar variáveis de ambiente
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
+
+No PowerShell do Windows, use o comando acima. Confira se `EXPO_PUBLIC_SUPABASE_URL`
+e `EXPO_PUBLIC_SUPABASE_KEY` no arquivo `.env` correspondem ao seu projeto Supabase;
+o Expo não carrega `.env.example` automaticamente.
 
 Edite `.env` com seus dados:
 

@@ -9,7 +9,7 @@ import {
   sendMessage,
 } from '@/services/messages';
 import { useMyProfile } from './useMyProfile';
-import type { Message } from '@/types';
+import type { Message, PendingMessage } from '@/types';
 
 // Histórico da sala + a inscrição no Realtime.
 export function useMessages(roomId: string | undefined) {
@@ -43,7 +43,7 @@ export function useMessages(roomId: string | undefined) {
               return [...old, full];
             });
           } catch {
-            // Mensagem pode ter sido apagada entre o evento e a busca.
+            void queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
           }
         },
       )
@@ -82,7 +82,7 @@ export function useSendMessage(roomId: string) {
     mutationFn: async (body: string) => {
       if (!user) throw new Error('Faça login para enviar mensagens.');
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const optimistic: Message = {
+      const optimistic: PendingMessage = {
         id: tempId,
         roomId,
         userId: user.id,
@@ -90,6 +90,7 @@ export function useSendMessage(roomId: string) {
         createdAt: new Date().toISOString(),
         username: profile?.username ?? 'Você',
         avatarColor: profile?.avatarColor ?? '#2563EB',
+        pending: true,
       };
       queryClient.setQueryData<Message[]>(['messages', roomId], (old) => [
         ...(old ?? []),
@@ -98,9 +99,12 @@ export function useSendMessage(roomId: string) {
 
       try {
         const real = await sendMessage(roomId, user.id, body);
-        queryClient.setQueryData<Message[]>(['messages', roomId], (old) =>
-          old?.map((m) => (m.id === tempId ? real : m)),
-        );
+        queryClient.setQueryData<Message[]>(['messages', roomId], (old) => {
+          const withoutTemporary = old?.filter((message) => message.id !== tempId) ?? [];
+          return withoutTemporary.some((message) => message.id === real.id)
+            ? withoutTemporary
+            : [...withoutTemporary, real];
+        });
         return real;
       } catch (error) {
         queryClient.setQueryData<Message[]>(['messages', roomId], (old) =>

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
 import { Avatar } from '@/components/Avatar';
 import { Button } from '@/components/Button';
@@ -10,6 +10,7 @@ import { Screen } from '@/components/Screen';
 import { useAuth } from '@/context/AuthContext';
 import { useMyProfile, useUpdateUsername } from '@/hooks/useMyProfile';
 import { colors, spacing } from '@/theme';
+import { friendlyError } from '@/utils/errors';
 
 const schema = z.object({
   username: z
@@ -23,6 +24,10 @@ export default function ProfileScreen() {
   const { signOut, user } = useAuth();
   const { data: profile } = useMyProfile();
   const updateUsername = useUpdateUsername();
+  const [saveFeedback, setSaveFeedback] = useState<{
+    message: string;
+    isError: boolean;
+  } | null>(null);
 
   const { control, handleSubmit, reset, formState } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -34,11 +39,12 @@ export default function ProfileScreen() {
   }, [profile?.username, reset]);
 
   const submit = handleSubmit(async (values) => {
+    setSaveFeedback(null);
     try {
       await updateUsername.mutateAsync(values.username);
-      Alert.alert('Sucesso', 'Nome atualizado!');
-    } catch {
-      Alert.alert('Erro', 'Não foi possível atualizar o nome.');
+      setSaveFeedback({ message: 'Nome atualizado!', isError: false });
+    } catch (error) {
+      setSaveFeedback({ message: friendlyError(error), isError: true });
     }
   });
 
@@ -47,12 +53,22 @@ export default function ProfileScreen() {
       <Text style={styles.header}>Perfil</Text>
 
       <View style={styles.avatarRow}>
-        <Avatar name={profile?.username ?? user?.email ?? '?'} size={72} />
+        <Avatar
+          username={profile?.username ?? user?.email ?? '?'}
+          color={profile?.avatarColor ?? colors.primary}
+          size={72}
+        />
       </View>
 
       <Text style={styles.email}>{user?.email}</Text>
 
       <FormInput control={control} name="username" label="Nome de exibição" />
+
+      {saveFeedback ? (
+        <Text style={[styles.feedback, saveFeedback.isError && styles.feedbackError]}>
+          {saveFeedback.message}
+        </Text>
+      ) : null}
 
       <Button
         title="Salvar"
@@ -74,6 +90,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   avatarRow: { alignItems: 'center', marginVertical: spacing.lg },
+  feedback: { color: colors.success, textAlign: 'center', marginBottom: spacing.sm },
+  feedbackError: { color: colors.danger },
   email: {
     textAlign: 'center',
     color: colors.muted,

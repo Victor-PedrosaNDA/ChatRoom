@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { Button } from '@/components/Button';
 import { FormInput } from '@/components/FormInput';
 import { Screen } from '@/components/Screen';
@@ -14,8 +14,8 @@ import { friendlyError } from '@/utils/errors';
 
 export default function RegisterScreen() {
   const { signUp } = useAuth();
-  const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const { control, handleSubmit, formState } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: { name: '', email: '', password: '', confirm: '' },
@@ -23,6 +23,7 @@ export default function RegisterScreen() {
 
   const submit = handleSubmit(async (values) => {
     setFormError(null);
+    setNotice(null);
     try {
       const { needsConfirmation } = await signUp(
         values.name,
@@ -30,11 +31,9 @@ export default function RegisterScreen() {
         values.password,
       );
       if (needsConfirmation) {
-        Alert.alert(
-          'Confirme seu e-mail',
-          'Enviamos um link de confirmação. Verifique sua caixa de entrada e depois entre.',
+        setNotice(
+          'Conta criada. Verifique seu e-mail para confirmar o cadastro e depois entre.',
         );
-        router.replace('/(auth)/login');
       }
     } catch (error) {
       setFormError(friendlyError(error));
@@ -78,6 +77,7 @@ export default function RegisterScreen() {
       />
 
       {formError ? <Text style={styles.error}>{formError}</Text> : null}
+      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
       <Button title="Criar conta" onPress={submit} loading={formState.isSubmitting} />
 
@@ -92,6 +92,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '800', color: colors.text, marginTop: spacing.lg },
   subtitle: { fontSize: 15, color: colors.muted, marginBottom: spacing.lg, marginTop: 4 },
   error: { color: colors.danger, marginBottom: spacing.md, textAlign: 'center' },
+  notice: { color: colors.success, marginBottom: spacing.md, textAlign: 'center' },
   link: { marginTop: spacing.lg, textAlign: 'center', color: colors.muted, fontSize: 15 },
   linkStrong: { color: colors.primary, fontWeight: '700' },
 });

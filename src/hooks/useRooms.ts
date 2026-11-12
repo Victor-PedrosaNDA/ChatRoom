@@ -60,7 +60,12 @@ export function useJoinRoom() {
       if (!user) throw new Error('Faça login para entrar na sala.');
       return joinRoom(roomId, user.id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rooms'] }),
+    onSuccess: (_data, roomId) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['rooms'] }),
+        queryClient.invalidateQueries({ queryKey: ['rooms', 'members', roomId] }),
+        queryClient.invalidateQueries({ queryKey: ['messages', roomId] }),
+      ]),
   });
 }
 

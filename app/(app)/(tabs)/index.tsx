@@ -25,8 +25,8 @@ export default function RoomsScreen() {
         ListEmptyComponent={
           <EmptyState
             icon="chatbubbles-outline"
-            message="Nenhuma sala ainda."
-            hint="Crie a primeira sala usando o botão abaixo!"
+            title="Nenhuma sala ainda"
+            message="Crie a primeira sala usando o botão abaixo!"
           />
         }
         renderItem={({ item }) => (
